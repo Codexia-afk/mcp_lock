@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Verify Go Module Tidiness
+        run: go mod verify
+
+      - name: Run Go Unit Tests
+        run: go test -v -race ./...
+
+      - name: Build mcp-lock CLI
+        run: |
+          mkdir -p bin
+          go build -o bin/mcp-lock ./cmd/mcp-lock
+          ./bin/mcp-lock version
+          ./bin/mcp-lock doctor
+
+      - name: Run End-to-End Release Gate Demo
+        run: ./scripts/demo-two-version-gate.sh

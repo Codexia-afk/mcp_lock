@@ -1,0 +1,5 @@
+**
+!go.mod
+!fixtures/
+!fixtures/echo-server/
+!fixtures/echo-server/main.go

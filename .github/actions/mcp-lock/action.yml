@@ -1,0 +1,95 @@
+name: 'mcp-lock Behavioral Audit'
+description: 'Audits MCP server runtime behavior, compares against behavior.lock, and blocks unapproved capability expansions in CI.'
+author: 'mcp-lock maintainers'
+
+inputs:
+  config:
+    description: 'Path to mcp-lock configuration JSON'
+    required: false
+    default: 'mcp-lock.json'
+  lockfile:
+    description: 'Path to committed baseline behavior.lock'
+    required: false
+    default: 'behavior.lock'
+  auto-approve-narrower:
+    description: 'Automatically approve PRs if observed permissions are identical or narrower'
+    required: false
+    default: 'true'
+  backend:
+    description: 'Observation backend to use (docker or emulated)'
+    required: false
+    default: 'docker'
+
+outputs:
+  evidence-digest:
+    description: 'SHA-256 digest of normalized behavioral evidence'
+    value: ${{ steps.audit.outputs.evidence-digest }}
+  added-count:
+    description: 'Number of newly added unapproved capabilities'
+    value: ${{ steps.audit.outputs.added-count }}
+  badge-markdown:
+    description: 'Markdown badge snippet for README'
+    value: ${{ steps.audit.outputs.badge-markdown }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.26'
+        cache: false
+
+    - name: Build mcp-lock CLI
+      shell: bash
+      run: |
+        go build -o /tmp/mcp-lock ./cmd/mcp-lock
+        /tmp/mcp-lock doctor
+
+    - name: Observe Candidate Server
+      id: audit
+      shell: bash
+      run: |
+        candidate_lock="/tmp/candidate.lock"
+        echo "Observing MCP server behavior..."
+        /tmp/mcp-lock observe --config "${{ inputs.config }}" --out "$candidate_lock" --backend "${{ inputs.backend }}"
+        /tmp/mcp-lock validate --lock "$candidate_lock"
+        
+        digest=$(grep -o '"evidenceDigest": "[^"]*"' "$candidate_lock" | head -1 | cut -d'"' -f4)
+        echo "evidence-digest=$digest" >> $GITHUB_OUTPUT
+
+        echo "Comparing candidate against baseline ${{ inputs.lockfile }}..."
+        diff_args="--from ${{ inputs.lockfile }} --to $candidate_lock"
+        if [ "${{ inputs.auto-approve-narrower }}" = "true" ]; then
+          diff_args="$diff_args --auto-approve-narrower"
+        fi
+
+        set +e
+        diff_output=$(/tmp/mcp-lock diff $diff_args 2>&1)
+        diff_status=$?
+        set -e
+
+        badge_output=$(/tmp/mcp-lock badge --lock "$candidate_lock")
+        echo "badge-markdown<<EOF" >> $GITHUB_OUTPUT
+        echo "$badge_output" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+        # Generate GitHub Step Summary
+        echo "## 🛡️ mcp-lock Behavioral Audit Result" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        if [ "$diff_status" -eq 0 ]; then
+          echo "✅ **PASS**: No unapproved capability expansion observed." >> $GITHUB_STEP_SUMMARY
+        else
+          echo "⚠️ **REVIEW REQUIRED**: Candidate introduced new operating system permissions." >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "$diff_output" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "$badge_output" >> $GITHUB_STEP_SUMMARY
+
+        if [ "$diff_status" -ne 0 ]; then
+          echo "::error::mcp-lock detected behavioral changes requiring maintainer review."
+          exit $diff_status
+        fi

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:mcp-lock:policy:v1",
+  "title": "mcp-lock reviewed policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "status", "serverImageDigest", "evidenceDigest", "files", "network", "executables", "requiredControls"],
+  "properties": {
+    "schemaVersion": {"const": "1"},
+    "status": {"enum": ["proposed", "approved"]},
+    "serverImageDigest": {"$ref": "#/$defs/digest"},
+    "evidenceDigest": {"$ref": "#/$defs/digest"},
+    "files": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["path", "access"], "properties": {"path": {"type": "string", "pattern": "^/"}, "access": {"enum": ["read", "write"]}}}},
+    "network": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["host", "port"], "properties": {"host": {"type": "string", "minLength": 1}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}}}},
+    "executables": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["path"], "properties": {"path": {"type": "string", "pattern": "^/"}, "digest": {"$ref": "#/$defs/digest"}}}},
+    "requiredControls": {"type": "array", "uniqueItems": true, "items": {"enum": ["filesystem", "network", "process"]}},
+    "reviewRequired": {"type": "array", "items": {"type": "string"}},
+    "approvedBy": {"type": "string", "minLength": 1}
+  },
+  "if": {"properties": {"status": {"const": "approved"}}},
+  "then": {"required": ["approvedBy"], "properties": {"reviewRequired": {"maxItems": 0}, "executables": {"items": {"required": ["digest"]}}}},
+  "$defs": {"digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}}
+}
