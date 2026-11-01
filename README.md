@@ -4,6 +4,7 @@
 [![mcp-lock: verified behavior](https://img.shields.io/badge/mcp--lock-verified_behavior-2ea44f?logo=shield)](docs/BADGE.md)
 [![Go Version](https://img.shields.io/badge/go-1.26+-00ADD8?logo=go)](go.mod)
 [![MCP Spec](https://img.shields.io/badge/MCP-2026--07--28-6f42c1)](https://modelcontextprotocol.io)
+[![CI](https://github.com/Codexia-afk/mcp_lock/actions/workflows/ci.yml/badge.svg)](https://github.com/Codexia-afk/mcp_lock/actions/workflows/ci.yml)
 
 **Behavioral evidence, reviewed permission lockfiles, and author-side trust for Model Context Protocol (MCP) servers.**
 
