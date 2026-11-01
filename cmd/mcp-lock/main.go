@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -20,7 +21,10 @@ import (
 	"mcp-lock/internal/wrap"
 )
 
-const version = "0.1.0-dev"
+// version is stamped at release time via:
+//
+//	go build -ldflags "-X main.version=0.2.0" -o bin/mcp-lock ./cmd/mcp-lock
+var version = "0.1.0-dev"
 
 func main() { os.Exit(run(os.Args[1:])) }
 
@@ -65,8 +69,7 @@ func run(args []string) int {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, `mcp-lock 0.1.0-dev
-Usage: mcp-lock <command> [arguments]
+	fmt.Fprintf(os.Stderr, "mcp-lock %s\n%s", version, `Usage: mcp-lock <command> [arguments]
 
 Core Commands:
   observe    Record OS behavioral evidence from MCP server execution (emits behavior.lock)
@@ -303,14 +306,71 @@ func initCommand(args []string) int {
 	return 0
 }
 
+// Exit codes shared by the diff command so CLI and machine consumers agree.
+const (
+	diffStatusPass       = "pass"
+	diffStatusReview     = "review"
+	diffStatusIncomplete = "incomplete"
+)
+
+// diffReport is the machine-readable shape emitted by `mcp-lock diff --json`.
+type diffReport struct {
+	Comparable          bool                   `json:"comparable"`
+	Reasons             []string               `json:"reasons"`
+	Added               []lockfile.Observation `json:"added"`
+	Removed             []lockfile.Observation `json:"removed"`
+	AddedCount          int                    `json:"addedCount"`
+	RemovedCount        int                    `json:"removedCount"`
+	AutoApproveNarrower bool                   `json:"autoApproveNarrower"`
+	Status              string                 `json:"status"`
+}
+
+func newDiffReport(d lockfile.Diff, autoApproveNarrower bool, identityChanged bool) diffReport {
+	r := diffReport{
+		Comparable:          d.Comparable,
+		Reasons:             d.Reasons,
+		Added:               d.Added,
+		Removed:             d.Removed,
+		AutoApproveNarrower: autoApproveNarrower,
+		Status:              diffStatusPass,
+	}
+	if r.Added == nil {
+		r.Added = []lockfile.Observation{}
+	}
+	if r.Removed == nil {
+		r.Removed = []lockfile.Observation{}
+	}
+	if !d.Comparable {
+		r.Status = diffStatusIncomplete
+		return r
+	}
+	if len(d.Added) > 0 {
+		r.Status = diffStatusReview
+		return r
+	}
+	if len(d.Removed) > 0 {
+		if autoApproveNarrower {
+			r.Status = diffStatusPass
+		} else {
+			r.Status = diffStatusReview
+		}
+		return r
+	}
+	if identityChanged && !autoApproveNarrower {
+		r.Status = diffStatusReview
+	}
+	return r
+}
+
 func diffCommand(args []string) int {
 	fs := flag.NewFlagSet("diff", flag.ContinueOnError)
 	from := fs.String("from", "", "previous behavior.lock")
 	to := fs.String("to", "", "candidate behavior.lock")
 	autoApproveNarrower := fs.Bool("auto-approve-narrower", false, "auto-approve if candidate permissions are identical or narrower")
+	asJSON := fs.Bool("json", false, "emit machine-readable JSON diff report to stdout")
 
 	if err := fs.Parse(args); err != nil || *from == "" || *to == "" || fs.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: mcp-lock diff --from FILE --to FILE [--auto-approve-narrower]")
+		fmt.Fprintln(os.Stderr, "usage: mcp-lock diff --from FILE --to FILE [--auto-approve-narrower] [--json]")
 		return 3
 	}
 
@@ -326,46 +386,70 @@ func diffCommand(args []string) int {
 	}
 
 	d := lockfile.Compare(a, b)
-	if !d.Comparable {
-		fmt.Fprintln(os.Stderr, "cannot compare scans:")
-		for _, reason := range d.Reasons {
-			fmt.Fprintln(os.Stderr, " -", reason)
+	report := newDiffReport(d, *autoApproveNarrower, a.Server.ImageDigest != b.Server.ImageDigest)
+	report.AddedCount = len(d.Added)
+	report.RemovedCount = len(d.Removed)
+
+	if *asJSON {
+		b, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "encoding diff report: %v\n", err)
+			return 3
 		}
+		fmt.Println(string(b))
+	} else {
+		if !d.Comparable {
+			fmt.Fprintln(os.Stderr, "cannot compare scans:")
+			for _, reason := range d.Reasons {
+				fmt.Fprintln(os.Stderr, " -", reason)
+			}
+			return 4
+		}
+
+		for _, o := range d.Added {
+			fmt.Printf("+ %q %q %q (%q)\n", o.Kind, o.Target, o.Outcome, o.Scenario)
+		}
+		for _, o := range d.Removed {
+			fmt.Printf("- %q %q %q (%q)\n", o.Kind, o.Target, o.Outcome, o.Scenario)
+		}
+
+		if len(d.Added) > 0 {
+			fmt.Fprintln(os.Stderr, "behavior changed; review required (expanded capabilities detected)")
+			return 2
+		}
+
+		if len(d.Removed) > 0 {
+			if *autoApproveNarrower {
+				fmt.Println("permissions narrowed; auto-approved")
+				return 0
+			}
+			fmt.Fprintln(os.Stderr, "behavior changed; review required")
+			return 2
+		}
+
+		if a.Server.ImageDigest != b.Server.ImageDigest {
+			if *autoApproveNarrower {
+				fmt.Println("artifact digest updated with identical permissions; auto-approved")
+				return 0
+			}
+			fmt.Fprintln(os.Stderr, "artifact digest changed; identity review required")
+			return 2
+		}
+
+		fmt.Println("no observed behavior change")
+		return 0
+	}
+
+	switch report.Status {
+	case diffStatusPass:
+		return 0
+	case diffStatusReview:
+		return 2
+	case diffStatusIncomplete:
 		return 4
+	default:
+		return 3
 	}
-
-	for _, o := range d.Added {
-		fmt.Printf("+ %q %q %q (%q)\n", o.Kind, o.Target, o.Outcome, o.Scenario)
-	}
-	for _, o := range d.Removed {
-		fmt.Printf("- %q %q %q (%q)\n", o.Kind, o.Target, o.Outcome, o.Scenario)
-	}
-
-	if len(d.Added) > 0 {
-		fmt.Fprintln(os.Stderr, "behavior changed; review required (expanded capabilities detected)")
-		return 2
-	}
-
-	if len(d.Removed) > 0 {
-		if *autoApproveNarrower {
-			fmt.Println("permissions narrowed; auto-approved")
-			return 0
-		}
-		fmt.Fprintln(os.Stderr, "behavior changed; review required")
-		return 2
-	}
-
-	if a.Server.ImageDigest != b.Server.ImageDigest {
-		if *autoApproveNarrower {
-			fmt.Println("artifact digest updated with identical permissions; auto-approved")
-			return 0
-		}
-		fmt.Fprintln(os.Stderr, "artifact digest changed; identity review required")
-		return 2
-	}
-
-	fmt.Println("no observed behavior change")
-	return 0
 }
 
 func badgeCommand(args []string) int {

@@ -43,7 +43,7 @@ runs:
     - name: Build mcp-lock CLI
       shell: bash
       run: |
-        go build -o /tmp/mcp-lock ./cmd/mcp-lock
+        go build -ldflags "-X main.version=0.1.0-dev" -o /tmp/mcp-lock ./cmd/mcp-lock
         /tmp/mcp-lock doctor
 
     - name: Observe Candidate Server
@@ -65,9 +65,12 @@ runs:
         fi
 
         set +e
-        diff_output=$(/tmp/mcp-lock diff $diff_args 2>&1)
+        diff_json=$(/tmp/mcp-lock diff $diff_args --json)
         diff_status=$?
         set -e
+
+        added_count=$(printf '%s' "$diff_json" | jq -r '.addedCount // 0')
+        echo "added-count=$added_count" >> $GITHUB_OUTPUT
 
         badge_output=$(/tmp/mcp-lock badge --lock "$candidate_lock")
         echo "badge-markdown<<EOF" >> $GITHUB_OUTPUT
@@ -84,7 +87,7 @@ runs:
         fi
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        echo "$diff_output" >> $GITHUB_STEP_SUMMARY
+        echo "$diff_json" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "$badge_output" >> $GITHUB_STEP_SUMMARY

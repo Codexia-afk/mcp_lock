@@ -39,7 +39,7 @@ Most security tools act as consumer-side barriers (blocking installations after 
 
 ### 1. Build and Run Doctor
 ```sh
-go build -o bin/mcp-lock ./cmd/mcp-lock
+go build -ldflags "-X main.version=0.1.0-dev" -o bin/mcp-lock ./cmd/mcp-lock
 ./bin/mcp-lock doctor
 ```
 
@@ -84,6 +84,9 @@ mcp-lock validate --lock behavior.lock
 
 # 3. Compare candidate against baseline in CI (auto-approving identical/narrower permissions)
 mcp-lock diff --from baseline.lock --to candidate.lock --auto-approve-narrower
+
+# Machine-readable diff report for CI and tooling
+mcp-lock diff --from baseline.lock --to candidate.lock --json
 
 # 4. Propose and assess reviewed permission policy
 mcp-lock policy propose --lock behavior.lock --out proposed-policy.json
