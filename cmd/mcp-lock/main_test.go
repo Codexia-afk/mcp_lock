@@ -291,3 +291,103 @@ func TestDiffJsonReport(t *testing.T) {
 		t.Fatalf("unexpected diff JSON report: %+v", passed)
 	}
 }
+
+func TestBadgeJsonReport(t *testing.T) {
+	digestA := "sha256:" + strings.Repeat("a", 64)
+	zero := 0
+	lock := lockfile.Lock{
+		SchemaVersion:  "1",
+		Server:         lockfile.Server{ImageDigest: digestA, Entrypoint: []string{"/app/server"}},
+		Protocol:       lockfile.Protocol{Version: "2026-07-28", Transport: "stdio"},
+		ScenarioSuite:  lockfile.ScenarioSuite{Digest: digestA, FixtureDigest: digestA, Completed: 1, Total: 1},
+		Environment:    lockfile.Environment{ImageDigest: digestA, Kernel: "linux", Arch: "amd64"},
+		Observer:       lockfile.Observer{Backend: "test", Version: "1", LostEvents: &zero, Status: "complete"},
+		Observations:   []lockfile.Observation{{Kind: "file.read", Target: "/fixtures/public.txt", Outcome: "allowed", Scenario: "read", Count: 1}},
+		EvidenceDigest: digestA,
+	}
+
+	root := t.TempDir()
+	lockPath := filepath.Join(root, "behavior.lock")
+	if err := lockfile.Save(lockPath, lock); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := run([]string{"badge", "--lock", lockPath, "--json"}); got != 0 {
+		t.Fatalf("expected badge --json exit code 0, got %d", got)
+	}
+	stdout := captureStdout(t, func() { _ = run([]string{"badge", "--lock", lockPath, "--json"}) })
+	var report badgeReport
+	if err := json.Unmarshal([]byte(stdout), &report); err != nil {
+		t.Fatalf("decoding badge JSON report: %v\n%s", err, stdout)
+	}
+	if !report.Complete || report.Backend != "test" || report.ScenariosCompleted != 1 || report.ScenariosTotal != 1 || report.FileReads != 1 || report.NetworkConnects != 0 || report.Processes != 0 || report.EvidenceDigest != digestA {
+		t.Fatalf("unexpected badge JSON report: %+v", report)
+	}
+}
+
+func TestPolicyCommandsJson(t *testing.T) {
+	digestA := "sha256:" + strings.Repeat("a", 64)
+	digestB := "sha256:" + strings.Repeat("b", 64)
+	zero := 0
+	baseline := lockfile.Lock{
+		SchemaVersion:  "1",
+		Server:         lockfile.Server{ImageDigest: digestA, Entrypoint: []string{"/app/server"}},
+		Protocol:       lockfile.Protocol{Version: "2026-07-28", Transport: "stdio"},
+		ScenarioSuite:  lockfile.ScenarioSuite{Digest: digestA, FixtureDigest: digestA, Completed: 1, Total: 1},
+		Environment:    lockfile.Environment{ImageDigest: digestA, Kernel: "linux", Arch: "amd64"},
+		Observer:       lockfile.Observer{Backend: "test", Version: "1", LostEvents: &zero, Status: "complete"},
+		Observations:   []lockfile.Observation{{Kind: "file.read", Target: "/fixtures/public.txt", Outcome: "allowed", Scenario: "read", Count: 1}},
+		EvidenceDigest: digestA,
+	}
+	candidate := baseline
+	candidate.Server.ImageDigest = digestB
+	candidate.EvidenceDigest = digestB
+	candidate.Observations = append([]lockfile.Observation(nil), baseline.Observations...)
+	candidate.Observations = append(candidate.Observations, lockfile.Observation{Kind: "file.read", Target: "/fixtures/secret.txt", Outcome: "allowed", Scenario: "read", Count: 1})
+
+	root := t.TempDir()
+	oldPath := filepath.Join(root, "old.lock")
+	newPath := filepath.Join(root, "new.lock")
+	proposedPath := filepath.Join(root, "proposed-policy.json")
+	approvedPath := filepath.Join(root, "approved-policy.json")
+	if err := lockfile.Save(oldPath, baseline); err != nil {
+		t.Fatal(err)
+	}
+	if err := lockfile.Save(newPath, candidate); err != nil {
+		t.Fatal(err)
+	}
+	p := policy.Policy{
+		SchemaVersion: "1", Status: "approved", ServerImageDigest: digestA, EvidenceDigest: digestA,
+		Files:            []policy.FileRule{{Path: "/fixtures/public.txt", Access: "read"}},
+		RequiredControls: []string{"filesystem", "network", "process"}, ApprovedBy: "reviewer",
+	}
+	if err := policy.Save(approvedPath, p); err != nil {
+		t.Fatal(err)
+	}
+
+	// Propose: JSON output carries the proposed policy.
+	if got := run([]string{"policy", "propose", "--lock", oldPath, "--out", proposedPath, "--json"}); got != 0 {
+		t.Fatalf("expected policy propose --json exit code 0, got %d", got)
+	}
+	stdout := captureStdout(t, func() { _ = run([]string{"policy", "propose", "--lock", oldPath, "--out", proposedPath, "--json"}) })
+	var proposed policy.Policy
+	if err := json.Unmarshal([]byte(stdout), &proposed); err != nil {
+		t.Fatalf("decoding proposed policy JSON: %v\n%s", err, stdout)
+	}
+	if proposed.Status != "proposed" || proposed.ServerImageDigest != digestA {
+		t.Fatalf("unexpected proposed policy JSON: %+v", proposed)
+	}
+
+	// Assess: JSON output carries the assessment with unapproved capabilities.
+	if got := run([]string{"policy", "assess", "--policy", approvedPath, "--lock", newPath, "--json"}); got != 2 {
+		t.Fatalf("expected policy assess --json unapproved exit code 2, got %d", got)
+	}
+	stdout = captureStdout(t, func() { _ = run([]string{"policy", "assess", "--policy", approvedPath, "--lock", newPath, "--json"}) })
+	var assessment policy.Assessment
+	if err := json.Unmarshal([]byte(stdout), &assessment); err != nil {
+		t.Fatalf("decoding policy assessment JSON: %v\n%s", err, stdout)
+	}
+	if len(assessment.Unapproved) != 1 || assessment.Unapproved[0].Target != "/fixtures/secret.txt" {
+		t.Fatalf("unexpected policy assessment JSON: %+v", assessment)
+	}
+}

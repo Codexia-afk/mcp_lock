@@ -40,7 +40,7 @@ Most security tools act as consumer-side barriers (blocking installations after 
 
 ### 1. Build and Run Doctor
 ```sh
-go build -ldflags "-X main.version=0.1.0-dev" -o bin/mcp-lock ./cmd/mcp-lock
+go build -ldflags "-X main.version=0.1.0" -o bin/mcp-lock ./cmd/mcp-lock
 ./bin/mcp-lock doctor
 ```
 

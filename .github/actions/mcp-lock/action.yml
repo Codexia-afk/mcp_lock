@@ -43,7 +43,7 @@ runs:
     - name: Build mcp-lock CLI
       shell: bash
       run: |
-        go build -ldflags "-X main.version=0.1.0-dev" -o /tmp/mcp-lock ./cmd/mcp-lock
+        go build -ldflags "-X main.version=0.1.0" -o /tmp/mcp-lock ./cmd/mcp-lock
         /tmp/mcp-lock doctor
 
     - name: Observe Candidate Server

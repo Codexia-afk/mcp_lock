@@ -23,7 +23,7 @@ import (
 
 // version is stamped at release time via:
 //
-//	go build -ldflags "-X main.version=0.2.0" -o bin/mcp-lock ./cmd/mcp-lock
+//	go build -ldflags "-X main.version=0.1.0" -o bin/mcp-lock ./cmd/mcp-lock
 var version = "0.1.0-dev"
 
 func main() { os.Exit(run(os.Args[1:])) }
@@ -452,9 +452,49 @@ func diffCommand(args []string) int {
 	}
 }
 
+// badgeReport is the machine-readable shape emitted by `mcp-lock badge --json`.
+type badgeReport struct {
+	Complete           bool   `json:"complete"`
+	Backend            string `json:"backend"`
+	ScenariosCompleted int    `json:"scenariosCompleted"`
+	ScenariosTotal     int    `json:"scenariosTotal"`
+	FileReads          int    `json:"fileReads"`
+	FileWrites         int    `json:"fileWrites"`
+	NetworkConnects    int    `json:"networkConnects"`
+	Processes          int    `json:"processes"`
+	EvidenceDigest     string `json:"evidenceDigest"`
+}
+
+func newBadgeReport(l lockfile.Lock) badgeReport {
+	r := badgeReport{
+		Complete:           l.Complete(),
+		Backend:            l.Observer.Backend,
+		ScenariosCompleted: l.ScenarioSuite.Completed,
+		ScenariosTotal:     l.ScenarioSuite.Total,
+		EvidenceDigest:     l.EvidenceDigest,
+	}
+	for _, o := range l.Observations {
+		if o.Outcome != "allowed" {
+			continue
+		}
+		switch o.Kind {
+		case "file.read":
+			r.FileReads++
+		case "file.write":
+			r.FileWrites++
+		case "network.connect":
+			r.NetworkConnects++
+		case "process.exec":
+			r.Processes++
+		}
+	}
+	return r
+}
+
 func badgeCommand(args []string) int {
 	fs := flag.NewFlagSet("badge", flag.ContinueOnError)
 	lockPath := fs.String("lock", "behavior.lock", "path to behavior.lock")
+	asJSON := fs.Bool("json", false, "emit machine-readable JSON report to stdout")
 	if err := fs.Parse(args); err != nil {
 		return 3
 	}
@@ -465,25 +505,16 @@ func badgeCommand(args []string) int {
 		return 3
 	}
 
-	fileReads := 0
-	fileWrites := 0
-	netConnects := 0
-	procs := 0
+	report := newBadgeReport(l)
 
-	for _, o := range l.Observations {
-		if o.Outcome != "allowed" {
-			continue
+	if *asJSON {
+		b, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "encoding badge report: %v\n", err)
+			return 3
 		}
-		switch o.Kind {
-		case "file.read":
-			fileReads++
-		case "file.write":
-			fileWrites++
-		case "network.connect":
-			netConnects++
-		case "process.exec":
-			procs++
-		}
+		fmt.Println(string(b))
+		return 0
 	}
 
 	badgeURL := "https://img.shields.io/badge/mcp--lock-verified_behavior-2ea44f?logo=shield"
@@ -491,10 +522,10 @@ func badgeCommand(args []string) int {
 	fmt.Println("### Audited MCP Server Behavior")
 	fmt.Printf("- **Status**: Verified complete (`%s`)\n", l.Observer.Backend)
 	fmt.Printf("- **Scenarios**: %d/%d passed\n", l.ScenarioSuite.Completed, l.ScenarioSuite.Total)
-	fmt.Printf("- **Observed Filesystem Reads**: %d\n", fileReads)
-	fmt.Printf("- **Observed Filesystem Writes**: %d\n", fileWrites)
-	fmt.Printf("- **Observed Network Egress**: %d\n", netConnects)
-	fmt.Printf("- **Observed Subprocesses**: %d\n", procs)
+	fmt.Printf("- **Observed Filesystem Reads**: %d\n", report.FileReads)
+	fmt.Printf("- **Observed Filesystem Writes**: %d\n", report.FileWrites)
+	fmt.Printf("- **Observed Network Egress**: %d\n", report.NetworkConnects)
+	fmt.Printf("- **Observed Subprocesses**: %d\n", report.Processes)
 	fmt.Printf("- **Evidence Digest**: `%s`\n", l.EvidenceDigest)
 	return 0
 }
@@ -534,8 +565,9 @@ func policyCommand(args []string) int {
 	fs := flag.NewFlagSet("policy propose", flag.ContinueOnError)
 	lockPath := fs.String("lock", "", "complete behavior lockfile")
 	outPath := fs.String("out", "", "proposed policy path")
+	asJSON := fs.Bool("json", false, "emit machine-readable JSON policy to stdout")
 	if err := fs.Parse(args[1:]); err != nil || *lockPath == "" || *outPath == "" || fs.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: mcp-lock policy propose --lock FILE --out FILE")
+		fmt.Fprintln(os.Stderr, "usage: mcp-lock policy propose --lock FILE --out FILE [--json]")
 		return 3
 	}
 	l, err := lockfile.Load(*lockPath)
@@ -547,6 +579,14 @@ func policyCommand(args []string) int {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 4
+	}
+	if *asJSON {
+		b, err := json.MarshalIndent(p, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "encoding proposed policy: %v\n", err)
+			return 7
+		}
+		fmt.Println(string(b))
 	}
 	if err := policy.Save(*outPath, p); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -561,9 +601,10 @@ func policyAssessCommand(args []string) int {
 	policyPath := fs.String("policy", "", "approved policy JSON")
 	lockPath := fs.String("lock", "", "candidate behavior.lock")
 	allowNarrower := fs.Bool("allow-narrower", false, "allow artifact update if candidate permissions fit within approved policy")
+	asJSON := fs.Bool("json", false, "emit machine-readable JSON assessment to stdout")
 
 	if err := fs.Parse(args); err != nil || *policyPath == "" || *lockPath == "" || fs.NArg() != 0 {
-		fmt.Fprintln(os.Stderr, "usage: mcp-lock policy assess --policy FILE --lock FILE [--allow-narrower]")
+		fmt.Fprintln(os.Stderr, "usage: mcp-lock policy assess --policy FILE --lock FILE [--allow-narrower] [--json]")
 		return 3
 	}
 	p, err := policy.Load(*policyPath)
@@ -581,24 +622,40 @@ func policyAssessCommand(args []string) int {
 		fmt.Fprintln(os.Stderr, err)
 		return 4
 	}
-	for _, o := range a.Unapproved {
-		fmt.Printf("UNAPPROVED %q %q %q (%q)\n", o.Kind, o.Target, o.Outcome, o.Scenario)
+	if *asJSON {
+		b, err := json.MarshalIndent(a, "", "  ")
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "encoding policy assessment: %v\n", err)
+			return 3
+		}
+		fmt.Println(string(b))
 	}
 
 	if len(a.Unapproved) > 0 {
+		if !*asJSON {
+			for _, o := range a.Unapproved {
+				fmt.Printf("UNAPPROVED %q %q %q (%q)\n", o.Kind, o.Target, o.Outcome, o.Scenario)
+			}
+		}
 		return 2
 	}
 
 	if a.IdentityChanged {
 		if *allowNarrower {
-			fmt.Println("candidate observations fit the policy; identity updated within approved permissions")
+			if !*asJSON {
+				fmt.Println("candidate observations fit the policy; identity updated within approved permissions")
+			}
 			return 0
 		}
-		fmt.Fprintln(os.Stderr, "server artifact identity changed; review required")
+		if !*asJSON {
+			fmt.Fprintln(os.Stderr, "server artifact identity changed; review required")
+		}
 		return 2
 	}
 
-	fmt.Println("candidate observations fit the policy; this does not verify enforcement")
+	if !*asJSON {
+		fmt.Println("candidate observations fit the policy; this does not verify enforcement")
+	}
 	return 0
 }
 

@@ -17,6 +17,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Why: the maintainer GitHub Action and downstream CI systems need structured output to
     surface capability-diff results; parsing human-readable CLI text is brittle.
 
+- **`mcp-lock badge --json`** — machine-readable JSON badge/evidence report for CI and
+  README automation.
+  - Why: badge Markdown text is human-facing; CI can now consume structured counts.
+
+- **`mcp-lock policy propose --json` and `mcp-lock policy assess --json`** — machine-readable
+  JSON output for proposed/assessed policies, with pure-JSON stdout in `--json` mode.
+  - Why: policy workflows need structured unapproved-capability results.
+
 ### Changed
 
 - **Release version stamping** — the CLI version is now a linker-injectable variable
@@ -31,7 +39,7 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Why: the `added-count` output was documented but never written; CI workflows consuming
     it received an empty value.
 
-## [0.1.0] - 2026-10-27
+## [0.1.0] - 2026-11-02
 
 - Initial open-source implementation of the author-side behavioral trust wedge:
   threat model, canonical schemas, MCP protocol harness, auto-generated scenarios, npx/uvx
