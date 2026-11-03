@@ -1,0 +1,15 @@
+{
+  "name": "mcp-lock-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Behavioral evidence, reviewed permission lockfiles, and author-side trust for Model Context Protocol (MCP) servers.",
+  "scripts": {
+    "dev": "npm run dev --prefix apps/web",
+    "clean": "rm -rf apps/web/.next",
+    "build": "npm run build --prefix apps/web",
+    "start": "npm run start --prefix apps/web",
+    "test": "npm run test --prefix apps/web",
+    "lint": "npm run lint --prefix apps/web"
+  }
+}
+
