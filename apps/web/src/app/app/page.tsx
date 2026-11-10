@@ -8,19 +8,28 @@ import { listLockfiles, listPolicies, listProjects, listScans, listServers, list
 import { SampleWorkspaceButton } from "@/components/app/sample-workspace-button";
 
 export default async function AppOverviewPage() {
-  const session = await getSessionUser({ headers: await headers() });
-  if (!session) {
-    redirect("/auth/signin");
+  let user: any = { id: "usr_demo", name: "Developer", email: "developer@mcplock.tech" };
+  let projects: any[] = [];
+  let servers: any[] = [];
+  let scans: any[] = [];
+  let lockfiles: any[] = [];
+  let policies: any[] = [];
+
+  if (process.env.NEXT_PUBLIC_STATIC_EXPORT !== "true") {
+    const session = await getSessionUser({ headers: await headers() });
+    if (!session) {
+      redirect("/auth/signin");
+    }
+    const db = getDb();
+    user = db.prepare("SELECT id, name, email, email_verified AS emailVerified, image, created_at AS createdAt, updated_at AS updatedAt FROM users WHERE id = ?").get(session.userId) as any;
+    const workspaces = listWorkspacesForUser(user.id);
+    const workspaceId = workspaces[0]?.id;
+    projects = workspaceId ? listProjects(workspaceId) : [];
+    servers = workspaceId ? listServers(workspaceId) : [];
+    scans = workspaceId ? listScans(undefined, 5, 0) : [];
+    lockfiles = workspaceId ? listLockfiles() : [];
+    policies = workspaceId ? listPolicies(workspaceId) : [];
   }
-  const db = getDb();
-  const user = db.prepare("SELECT id, name, email, email_verified AS emailVerified, image, created_at AS createdAt, updated_at AS updatedAt FROM users WHERE id = ?").get(session.userId) as any;
-  const workspaces = listWorkspacesForUser(user.id);
-  const workspaceId = workspaces[0]?.id;
-  const projects = workspaceId ? listProjects(workspaceId) : [];
-  const servers = workspaceId ? listServers(workspaceId) : [];
-  const scans = workspaceId ? listScans(undefined, 5, 0) : [];
-  const lockfiles = workspaceId ? listLockfiles() : [];
-  const policies = workspaceId ? listPolicies(workspaceId) : [];
 
   const pendingReviews = policies.filter((p) => p.status === "proposed").length;
 

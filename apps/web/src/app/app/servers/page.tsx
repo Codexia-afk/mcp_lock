@@ -22,7 +22,7 @@ interface Server {
   lastScannedAt?: string;
 }
 
-export default function ServersPage() {
+function ServersContent() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") ?? "";
   const [servers, setServers] = React.useState<Server[]>([]);
@@ -176,6 +176,14 @@ export default function ServersPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+export default function ServersPage() {
+  return (
+    <React.Suspense fallback={<div className="p-8 text-sm text-muted">Loading servers...</div>}>
+      <ServersContent />
+    </React.Suspense>
   );
 }
 
