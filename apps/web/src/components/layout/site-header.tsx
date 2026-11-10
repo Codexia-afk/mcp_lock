@@ -58,17 +58,12 @@ export function SiteHeader() {
             href="https://github.com/Codexia-afk/mcp_lock"
             target="_blank"
             rel="noopener noreferrer"
-            className="hidden items-center gap-2 rounded-md border border-line bg-surface px-3 py-2 text-sm font-medium text-ink transition-colors hover:bg-inset sm:inline-flex"
+            aria-label="GitHub repository"
+            title="GitHub repository"
+            className="inline-flex size-9 items-center justify-center rounded-full border border-line bg-surface text-ink transition-colors hover:bg-inset hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            <Github className="size-4" aria-hidden="true" />
-            <span className="hidden md:inline">GitHub</span>
+            <Github className="size-4.5" aria-hidden="true" />
           </a>
-          <Link
-            href="/install"
-            className="hidden rounded-md px-3 py-2 text-sm font-medium text-muted transition-colors hover:text-ink md:inline-block"
-          >
-            Install
-          </Link>
           <Link
             href="/pricing"
             className="hidden rounded-md px-4 py-2 text-sm font-semibold text-white bg-primary hover:bg-primary-hover sm:inline-block"
