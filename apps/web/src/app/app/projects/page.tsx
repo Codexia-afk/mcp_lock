@@ -19,7 +19,7 @@ interface Project {
   updatedAt: string;
 }
 
-export default function ProjectsPage() {
+function ProjectsContent() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") ?? "";
   const [projects, setProjects] = React.useState<Project[]>([]);
@@ -135,6 +135,14 @@ export default function ProjectsPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function ProjectsPage() {
+  return (
+    <React.Suspense fallback={<div className="p-8 text-sm text-muted">Loading projects...</div>}>
+      <ProjectsContent />
+    </React.Suspense>
   );
 }
 

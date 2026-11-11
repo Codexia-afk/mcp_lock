@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, Update]
   pull_request:
-    branches: [main]
+    branches: [main, Update]
 
 jobs:
   test:
@@ -27,6 +27,21 @@ jobs:
       - name: Run Go Unit Tests
         run: go test -v -race ./...
 
+      - name: Start Docker Daemon
+        run: |
+          sudo systemctl start docker || sudo service docker start || true
+          for i in $(seq 1 10); do
+            if docker info > /dev/null 2>&1; then
+              echo "Docker daemon is ready"
+              break
+            fi
+            echo "Waiting for Docker daemon to become responsive..."
+            sudo chmod 666 /var/run/docker.sock 2>/dev/null || true
+            sleep 1
+          done
+          sudo chmod 666 /var/run/docker.sock || true
+          docker info
+
       - name: Build mcp-lock CLI
         run: |
           mkdir -p bin
@@ -36,3 +51,16 @@ jobs:
 
       - name: Run End-to-End Release Gate Demo
         run: ./scripts/demo-two-version-gate.sh
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+
+      - name: Run Web Tests & Verification
+        run: |
+          npm ci --prefix apps/web
+          npm test --prefix apps/web
+          npm run build:pages --prefix apps/web

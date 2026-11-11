@@ -20,7 +20,7 @@ interface Scan {
   events: Array<{ kind: string; target: string; outcome: string; scenario: string; count: number }>;
 }
 
-export default function ScansPage() {
+function ScansContent() {
   const searchParams = useSearchParams();
   const workspaceId = searchParams.get("workspaceId") ?? "";
   const [scans, setScans] = React.useState<Scan[]>([]);
@@ -71,5 +71,13 @@ export default function ScansPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ScansPage() {
+  return (
+    <React.Suspense fallback={<div className="space-y-6"><Skeleton className="h-8 w-56" /><SkeletonText lines={4} /></div>}>
+      <ScansContent />
+    </React.Suspense>
   );
 }

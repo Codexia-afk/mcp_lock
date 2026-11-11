@@ -91,15 +91,15 @@ func doctor() int {
 		fmt.Fprintln(os.Stderr, "Docker CLI unavailable")
 		return 5
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, path, "info", "--format", "{{.OSType}} {{.ServerVersion}}")
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Docker daemon unavailable")
+		fmt.Fprintf(os.Stderr, "Docker daemon unavailable: %v\n%s\n", err, string(output))
 		return 5
 	}
-	fmt.Printf("Docker daemon: %s", output)
+	fmt.Printf("Docker daemon: %s\n", strings.TrimSpace(string(output)))
 	if !strings.HasPrefix(string(output), "linux ") {
 		fmt.Fprintln(os.Stderr, "Linux Docker daemon required")
 		return 5

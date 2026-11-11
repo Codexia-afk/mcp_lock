@@ -3,22 +3,46 @@ import { notFound } from "next/navigation";
 import { getAuthContext } from "@/lib/api-context";
 import { getDb } from "@/lib/db";
 import { getScan } from "@/lib/queries";
+import type { Scan } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 
+export function generateStaticParams() {
+  return [{ id: "sample-scan-001" }];
+}
+
 export default async function ScanDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const auth = await getAuthContext(new Request(`http://localhost/api/scans/${id}`, { headers: await headers() }));
-  const scan = getScan(id);
+  let scan: Scan | null = null;
 
-  if (!scan) {
-    notFound();
-  }
-  const db = getDb();
-  const server = scan ? (db.prepare("SELECT * FROM servers WHERE id = ?").get(scan.serverId) as any) : null;
-  if (!server || server.workspace_id !== auth.workspaceId) {
-    notFound();
+  if (process.env.NEXT_PUBLIC_STATIC_EXPORT === "true") {
+    scan = {
+      id: "sample-scan-001",
+      serverId: "srv_sample",
+      status: "completed",
+      backend: "bpf_trace",
+      startedAt: "2026-11-10T00:00:00.000Z",
+      completedAt: "2026-11-10T00:01:00.000Z",
+      evidenceDigest: "sha256:4b918a0a91e5df784b15...",
+      events: [
+        { scenario: "init", kind: "file", target: "/app/config.json", outcome: "allowed", count: 1 } as any,
+        { scenario: "read", kind: "network", target: "api.github.com:443", outcome: "allowed", count: 2 } as any,
+      ],
+      observerLostEvents: 0,
+    } as Scan;
+  } else {
+    const auth = await getAuthContext(new Request(`http://localhost/api/scans/${id}`, { headers: await headers() }));
+    scan = getScan(id);
+
+    if (!scan) {
+      notFound();
+    }
+    const db = getDb();
+    const server = scan ? (db.prepare("SELECT * FROM servers WHERE id = ?").get(scan.serverId) as any) : null;
+    if (!server || server.workspace_id !== auth.workspaceId) {
+      notFound();
+    }
   }
 
   return (
@@ -74,12 +98,11 @@ export default async function ScanDetailPage({ params }: { params: Promise<{ id:
       </section>
 
       <div className="flex flex-wrap gap-3">
-        <Button variant="outline" onClick={() => undefined}>
+        <Button variant="outline">
           Export report
         </Button>
         <Button
           variant="outline"
-          onClick={() => undefined}
           disabled
         >
           Compare with baseline

@@ -9,16 +9,20 @@ export const metadata = {
 };
 
 export default async function SettingsPage() {
-  const session = await getSessionUser({ headers: await headers() });
-  if (!session) {
-    redirect("/auth/signin");
+  let user: any = { name: "Developer", email: "developer@mcplock.tech" };
+
+  if (process.env.NEXT_PUBLIC_STATIC_EXPORT !== "true") {
+    const session = await getSessionUser({ headers: await headers() });
+    if (!session) {
+      redirect("/auth/signin");
+    }
+    const db = getDb();
+    user = db
+      .prepare(
+        "SELECT id, name, email, email_verified AS emailVerified, image, created_at AS createdAt, updated_at AS updatedAt FROM users WHERE id = ?",
+      )
+      .get(session.userId) as any;
   }
-  const db = getDb();
-  const user = db
-    .prepare(
-      "SELECT id, name, email, email_verified AS emailVerified, image, created_at AS createdAt, updated_at AS updatedAt FROM users WHERE id = ?",
-    )
-    .get(session.userId) as any;
 
   return (
     <div className="max-w-4xl space-y-8">
