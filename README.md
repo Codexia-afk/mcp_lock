@@ -1,4 +1,4 @@
-# mcp-lock
+## mcp-lock
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![mcp-lock: verified behavior](https://img.shields.io/badge/mcp--lock-verified_behavior-2ea44f?logo=shield)](docs/BADGE.md)
